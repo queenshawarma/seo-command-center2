@@ -1,0 +1,28 @@
+name: Daily SEO Data Sync
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # كل يوم الساعة 6 صباحاً UTC (يعني 8 أو 9 صباحاً بتوقيت مصر)
+  workflow_dispatch:        # يسمح بتشغيل يدوي من تاب Actions لو احتجتِ تجربي فوراً
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install googleapis @supabase/supabase-js @google-analytics/data
+
+      - name: Run sync script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: node scripts/sync-data.js
