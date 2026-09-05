@@ -115,7 +115,81 @@ async function run() {
   console.log('خلص السحب لكل المواقع.');
 }
 
-run().catch(err => {
-  console.error('فشل السكريبت:', err);
-  process.exit(1);
-});
+// ============================================
+// كشف التراجعات وتسجيل تنبيهات تلقائية
+// ============================================
+
+function fmtDate(d) {
+  return d.toISOString().split('T')[0];
+}
+
+async function detectDrops() {
+  const { data: sites } = await supabase.from('sites').select('*').eq('status', 'active');
+  if (!sites) return;
+
+  const today = new Date();
+  const start14 = new Date(today);
+  start14.setDate(today.getDate() - 17); // نجيب آخر 14 يوم فعلي (مع هامش تأخر GSC)
+
+  for (const site of sites) {
+    const { data: metrics } = await supabase
+      .from('metrics_daily')
+      .select('date, clicks, sessions')
+      .eq('site_id', site.id)
+      .gte('date', fmtDate(start14))
+      .order('date', { ascending: true });
+
+    if (!metrics || metrics.length === 0) continue;
+
+    // ندمج clicks + sessions لكل يوم (ممكن ييجوا في صفين منفصلين GSC/GA4)
+    const byDate = {};
+    metrics.forEach(m => {
+      if (!byDate[m.date]) byDate[m.date] = { clicks: 0, sessions: 0 };
+      byDate[m.date].clicks += m.clicks || 0;
+      byDate[m.date].sessions += m.sessions || 0;
+    });
+
+    const dates = Object.keys(byDate).sort();
+    const last7 = dates.slice(-7);
+    const prev7 = dates.slice(-14, -7);
+    if (last7.length < 5 || prev7.length < 5) continue; // مش كفاية بيانات للمقارنة
+
+    const sum = (arr, key) => arr.reduce((s, d) => s + (byDate[d]?.[key] || 0), 0);
+    const clicks7 = sum(last7, 'clicks');
+    const clicksPrev7 = sum(prev7, 'clicks');
+
+    if (clicksPrev7 >= 10) { // نتجاهل المواقع الصغيرة جداً عشان منطلعش إنذارات وهمية
+      const dropPct = Math.round(((clicksPrev7 - clicks7) / clicksPrev7) * 100);
+      if (dropPct >= 20) {
+        // نتجنب تكرار نفس التنبيه لو اتسجل خلال آخر 3 أيام
+        const { data: recentAlert } = await supabase
+          .from('alerts')
+          .select('id')
+          .eq('site_id', site.id)
+          .eq('type', 'traffic_drop')
+          .gte('created_at', new Date(today.getTime() - 3 * 86400000).toISOString())
+          .limit(1);
+
+        if (!recentAlert || recentAlert.length === 0) {
+          const severity = dropPct >= 40 ? 'high' : 'medium';
+          await supabase.from('alerts').insert({
+            site_id: site.id,
+            type: 'traffic_drop',
+            severity,
+            message: `تراجع في النقرات بنسبة ${dropPct}% خلال آخر 7 أيام (من ${clicksPrev7} إلى ${clicks7}) مقارنة بالأسبوع السابق.`,
+          });
+          console.log(`  ⚠ تنبيه جديد لـ ${site.name}: تراجع ${dropPct}%`);
+        }
+      }
+    }
+  }
+}
+
+run()
+  .then(() => detectDrops())
+  .then(() => console.log('تم فحص كل المواقع بحثاً عن تراجعات.'))
+  .catch(err => {
+    console.error('فشل السكريبت:', err);
+    process.exit(1);
+  });
+

@@ -39,8 +39,32 @@ function TrendBadge({ pct }) {
   );
 }
 
+function AlertsPanel({ alerts, onDismiss }) {
+  if (!alerts.length) return null;
+  return (
+    <div className="space-y-2 mb-4">
+      {alerts.map(a => (
+        <div key={a.id} className={`flex justify-between items-center p-3 rounded-lg border ${
+          a.severity === 'high' ? 'bg-red-950 border-red-800' : 'bg-yellow-950 border-yellow-800'
+        }`}>
+          <div>
+            <span className="text-xs font-semibold mr-2">
+              {a.severity === 'high' ? '🔴' : '🟡'} {a.sites?.name || 'موقع'}
+            </span>
+            <span className="text-sm text-gray-300">{a.message}</span>
+          </div>
+          <button onClick={() => onDismiss(a.id)} className="text-xs text-gray-400 hover:text-white shrink-0 ml-3">
+            تمام، شفتها
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [siteCards, setSiteCards] = useState([]);
+  const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -48,6 +72,13 @@ export default function Dashboard() {
       const { data: sites, error: sitesError } = await supabase.from('sites').select('*').eq('status', 'active');
       console.log('DEBUG sites:', sites, 'error:', sitesError);
       if (!sites || sites.length === 0) { setLoading(false); return; }
+
+      const { data: alertRows } = await supabase
+        .from('alerts')
+        .select('*, sites(name)')
+        .eq('is_read', false)
+        .order('created_at', { ascending: false });
+      setAlerts(alertRows || []);
 
       const today = new Date();
       const start30 = new Date(today); start30.setDate(today.getDate() - 33);
@@ -100,6 +131,11 @@ export default function Dashboard() {
     load();
   }, []);
 
+  async function dismissAlert(id) {
+    await supabase.from('alerts').update({ is_read: true }).eq('id', id);
+    setAlerts(prev => prev.filter(a => a.id !== id));
+  }
+
   if (loading) return <p className="text-gray-400 text-sm">جاري تحميل البيانات...</p>;
 
   if (siteCards.length === 0) {
@@ -112,6 +148,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-4">
+      <AlertsPanel alerts={alerts} onDismiss={dismissAlert} />
       <h2 className="text-lg font-semibold mb-2">لوحة اليوم — آخر 7 أيام مقابل الـ 7 اللي قبلها</h2>
       <div className="grid md:grid-cols-2 gap-4">
         {siteCards.map(card => (
