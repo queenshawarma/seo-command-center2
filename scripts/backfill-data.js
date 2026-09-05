@@ -85,14 +85,20 @@ async function run() {
     if (site.gsc_property) {
       try {
         const rows = await backfillGSC(site.gsc_property);
+        let successCount = 0;
         for (const r of rows) {
-          await supabase.from('metrics_daily').upsert({
+          const { error: upsertErr } = await supabase.from('metrics_daily').upsert({
             site_id: site.id, date: r.date, source: 'gsc',
             clicks: r.clicks, impressions: r.impressions,
             ctr: r.ctr, avg_position: r.avg_position,
           }, { onConflict: 'site_id,date,source' });
+          if (upsertErr) {
+            console.error(`  ✗ فشل حفظ يوم ${r.date} (GSC):`, upsertErr.message);
+          } else {
+            successCount++;
+          }
         }
-        console.log(`  ✓ GSC: تم تخزين ${rows.length} يوم`);
+        console.log(`  ✓ GSC: تم تخزين ${successCount} من أصل ${rows.length} يوم`);
       } catch (e) {
         console.error(`  ✗ خطأ في GSC لـ ${site.name}:`, e.message);
       }
@@ -101,13 +107,19 @@ async function run() {
     if (site.ga4_property_id) {
       try {
         const rows = await backfillGA4(site.ga4_property_id);
+        let successCount = 0;
         for (const r of rows) {
-          await supabase.from('metrics_daily').upsert({
+          const { error: upsertErr } = await supabase.from('metrics_daily').upsert({
             site_id: site.id, date: r.date, source: 'ga4',
             sessions: r.sessions, users: r.users, conversions: r.conversions,
           }, { onConflict: 'site_id,date,source' });
+          if (upsertErr) {
+            console.error(`  ✗ فشل حفظ يوم ${r.date} (GA4):`, upsertErr.message);
+          } else {
+            successCount++;
+          }
         }
-        console.log(`  ✓ GA4: تم تخزين ${rows.length} يوم`);
+        console.log(`  ✓ GA4: تم تخزين ${successCount} من أصل ${rows.length} يوم`);
       } catch (e) {
         console.error(`  ✗ خطأ في GA4 لـ ${site.name}:`, e.message);
       }
