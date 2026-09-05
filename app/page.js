@@ -45,17 +45,19 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function load() {
-      const { data: sites } = await supabase.from('sites').select('*').eq('status', 'active');
+      const { data: sites, error: sitesError } = await supabase.from('sites').select('*').eq('status', 'active');
+      console.log('DEBUG sites:', sites, 'error:', sitesError);
       if (!sites || sites.length === 0) { setLoading(false); return; }
 
       const today = new Date();
       const start30 = new Date(today); start30.setDate(today.getDate() - 33);
 
-      const { data: metrics } = await supabase
+      const { data: metrics, error: metricsError } = await supabase
         .from('metrics_daily')
         .select('*')
         .gte('date', fmtDate(start30))
         .order('date', { ascending: true });
+      console.log('DEBUG metrics count:', metrics?.length, 'error:', metricsError, 'sample:', metrics?.[0]);
 
       const cards = sites.map(site => {
         const siteMetrics = (metrics || []).filter(m => m.site_id === site.id);
